@@ -5,12 +5,20 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { api } from "@/lib/api";
+import { subscribeMovies } from "@/lib/firebase/movies";
+import {
+  mapFavoriteMovies,
+  mapWatchHistory,
+  subscribeUserDoc,
+  type UserDoc,
+} from "@/lib/firebase/users";
 import type { Movie } from "@/types";
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [userDoc, setUserDoc] = useState<UserDoc | null>(null);
   const [history, setHistory] = useState<
     { movie: Movie; progress: number; duration: number; episodeIndex: number | null }[]
   >([]);
@@ -18,37 +26,42 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    return subscribeMovies((list) => setMovies(list));
+  }, []);
+
+  useEffect(() => {
     if (authLoading) return;
     if (!user) {
       router.replace("/login");
       return;
     }
-    Promise.all([api.user.watchHistory(), api.user.favorites()])
-      .then(([h, f]) => {
-        setHistory(
-          h.entries.map((e) => ({
-            movie: e.movie as Movie,
-            progress: e.progress,
-            duration: e.duration,
-            episodeIndex: e.episodeIndex,
-          }))
-        );
-        setFavorites(f.items as Movie[]);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    const unsub = subscribeUserDoc(user.id, (doc) => {
+      setUserDoc(doc);
+      setLoading(false);
+    });
+    return () => unsub();
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!userDoc) {
+      setHistory([]);
+      setFavorites([]);
+      return;
+    }
+    setHistory(mapWatchHistory(userDoc.watchHistory, movies));
+    setFavorites(mapFavoriteMovies(userDoc.favorites, movies));
+  }, [userDoc, movies]);
 
   if (authLoading || !user) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-16 md:px-8">
+      <div className="container mx-auto max-w-7xl px-4 py-16 md:px-8">
         <div className="skeleton mb-8 h-10 w-48" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 md:px-8">
+    <div className="container mx-auto max-w-7xl px-4 py-10 md:px-8">
       <h1 className="mb-2 text-3xl font-bold">Profile</h1>
       <p className="mb-10 text-zinc-400">
         {user.name} · {user.email}
@@ -111,21 +124,22 @@ export default function ProfilePage() {
         ) : favorites.length === 0 ? (
           <p className="text-zinc-500">No favorites yet.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          <div className="row row-cols-2 row-cols-md-4 g-3">
             {favorites.map((m) => (
-              <Link
-                key={m._id}
-                href={`/movie/${m._id}`}
-                className="relative aspect-[2/3] overflow-hidden rounded-lg bg-zinc-800"
-              >
-                <Image
-                  src={m.thumbnailUrl || "/placeholder.svg"}
-                  alt={m.title}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
-              </Link>
+              <div key={m._id} className="col">
+                <Link
+                  href={`/movie/${m._id}`}
+                  className="relative aspect-[2/3] block overflow-hidden rounded-lg bg-zinc-800"
+                >
+                  <Image
+                    src={m.thumbnailUrl || "/placeholder.svg"}
+                    alt={m.title}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                </Link>
+              </div>
             ))}
           </div>
         )}

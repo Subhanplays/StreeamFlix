@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { MovieForm, toPayload } from "@/components/admin/MovieForm";
-import { api } from "@/lib/api";
+import { createMovie } from "@/lib/firebase/movies";
 
 export default function NewMoviePage() {
   const router = useRouter();
@@ -13,10 +13,9 @@ export default function NewMoviePage() {
       <MovieForm
         submitLabel="Create movie"
         onSubmit={async (values) => {
-          const res = await api.movies.create(toPayload(values));
-          const m = res.movie as { _id: string };
-          if (!m?._id) throw new Error("Invalid response");
-          router.push(`/admin/movies/${m._id}/edit`);
+          const id = await createMovie(toPayload(values) as Record<string, unknown>);
+          if (!id) throw new Error("Invalid response");
+          router.push(`/admin/movies/${id}/edit`);
         }}
       />
     </div>

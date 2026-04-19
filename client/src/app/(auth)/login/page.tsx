@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useAuth, ApiError } from "@/components/providers/AuthProvider";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { ApiError } from "@/lib/errors";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -22,11 +23,7 @@ export default function LoginPage() {
       router.push("/");
     } catch (ex) {
       const msg =
-        ex instanceof ApiError
-          ? ex.message
-          : ex instanceof Error
-            ? ex.message
-            : "Login failed";
+        ex instanceof ApiError ? ex.message : ex instanceof Error ? ex.message : "Login failed";
       setErr(msg);
     } finally {
       setLoading(false);

@@ -4,27 +4,28 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { deleteMovie, subscribeMovies } from "@/lib/firebase/movies";
+import { getAppSettingsOnce, updateAppSettings } from "@/lib/firebase/settings";
 import type { Movie } from "@/types";
 
 export default function AdminMoviesPage() {
   const [items, setItems] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = () =>
-    api.movies
-      .list({ limit: 100, page: 1 })
-      .then((r) => setItems(r.items as Movie[]))
-      .finally(() => setLoading(false));
-
   useEffect(() => {
-    load();
+    return subscribeMovies((list) => {
+      setItems(list);
+      setLoading(false);
+    });
   }, []);
 
   const remove = async (id: string) => {
     if (!confirm("Delete this movie?")) return;
-    await api.movies.delete(id);
-    setItems((prev) => prev.filter((m) => m._id !== id));
+    const settings = await getAppSettingsOnce();
+    if (settings.homeBannerMovieId === id) {
+      await updateAppSettings({ homeBannerMovieId: null });
+    }
+    await deleteMovie(id);
   };
 
   return (
@@ -46,9 +47,9 @@ export default function AdminMoviesPage() {
           ))}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-800">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-zinc-900 text-zinc-400">
+        <div className="table-responsive rounded-lg ring-1 ring-zinc-800">
+          <table className="table table-dark table-hover mb-0 align-middle">
+            <thead className="text-secondary">
               <tr>
                 <th className="p-3">Thumb</th>
                 <th className="p-3">Title</th>
@@ -59,9 +60,9 @@ export default function AdminMoviesPage() {
             </thead>
             <tbody>
               {items.map((m) => (
-                <tr key={m._id} className="border-t border-zinc-800">
+                <tr key={m._id} className="border-zinc-800">
                   <td className="p-3">
-                    <div className="relative h-12 w-20 overflow-hidden rounded bg-zinc-800">
+                    <div className="position-relative h-12 w-20 overflow-hidden rounded bg-zinc-800">
                       <Image
                         src={m.thumbnailUrl || "/placeholder.svg"}
                         alt=""
@@ -75,7 +76,7 @@ export default function AdminMoviesPage() {
                   <td className="p-3 text-zinc-400">{m.releaseYear ?? "—"}</td>
                   <td className="p-3">{m.isFeatured ? "Yes" : "—"}</td>
                   <td className="p-3">
-                    <div className="flex gap-2">
+                    <div className="d-flex gap-2">
                       <Link
                         href={`/admin/movies/${m._id}/edit`}
                         className="rounded p-2 hover:bg-zinc-800"
@@ -86,7 +87,7 @@ export default function AdminMoviesPage() {
                       <button
                         type="button"
                         onClick={() => remove(m._id)}
-                        className="rounded p-2 text-red-400 hover:bg-zinc-800"
+                        className="rounded p-2 text-danger hover:bg-zinc-800"
                         aria-label="Delete"
                       >
                         <Trash2 className="h-4 w-4" />

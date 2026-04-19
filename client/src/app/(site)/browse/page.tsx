@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { distinctGenres, filterMovies, subscribeMovies } from "@/lib/firebase/movies";
 import type { Movie } from "@/types";
 
 const inputClass =
@@ -13,51 +13,53 @@ export default function BrowsePage() {
   const [q, setQ] = useState("");
   const [genre, setGenre] = useState("");
   const [year, setYear] = useState("");
-  const [genres, setGenres] = useState<string[]>([]);
-  const [items, setItems] = useState<Movie[]>([]);
+  const [catalog, setCatalog] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
-
-  const params = useMemo(
-    () => ({
-      q: q.trim() || undefined,
-      genre: genre || undefined,
-      year: year ? Number(year) : undefined,
-      page,
-      limit: 24,
-    }),
-    [q, genre, year, page]
-  );
+  const limit = 24;
 
   useEffect(() => {
-    api.movies.genres().then((r) => setGenres(r.genres));
+    return subscribeMovies(
+      (list) => {
+        setCatalog(list);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
   }, []);
 
+  const genres = useMemo(() => distinctGenres(catalog), [catalog]);
+
+  const filtered = useMemo(
+    () =>
+      filterMovies(catalog, {
+        q: q.trim() || undefined,
+        genre: genre || undefined,
+        year: year ? Number(year) : undefined,
+      }),
+    [catalog, q, genre, year]
+  );
+
+  const pages = Math.max(1, Math.ceil(filtered.length / limit));
+  const items = useMemo(() => {
+    const p = Math.min(page, pages);
+    const start = (p - 1) * limit;
+    return filtered.slice(start, start + limit);
+  }, [filtered, page, pages, limit]);
+
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api.movies
-      .list(params as Record<string, string | number | undefined>)
-      .then((r) => {
-        if (cancelled) return;
-        setItems(r.items as Movie[]);
-        setPages(r.pages);
-      })
-      .catch(console.error)
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [params]);
+    setPage(1);
+  }, [q, genre, year]);
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, pages));
+  }, [pages]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
+    <div className="container mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
       <div className="mb-10 md:mb-12">
         <h1 className="text-3xl font-black tracking-tight md:text-4xl">Browse</h1>
-        <p className="mt-2 max-w-xl text-sm text-zinc-400">Search and filter the catalog.</p>
+        <p className="mt-2 max-w-xl text-sm text-zinc-400">Search and filter the catalog (updates live from Firebase).</p>
       </div>
 
       <div className="mb-10 grid gap-4 rounded-2xl border border-white/[0.06] bg-black/30 p-4 backdrop-blur-sm sm:p-6 md:grid-cols-[1fr_auto_auto] md:items-end">

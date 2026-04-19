@@ -1,49 +1,63 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Heart, Play } from "lucide-react";
-import { api } from "@/lib/api";
+import { incrementMovieViews, subscribeMovie } from "@/lib/firebase/movies";
+import { subscribeUserDoc, toggleFavorite } from "@/lib/firebase/users";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Movie } from "@/types";
 
 export default function MovieDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const [movie, setMovie] = useState<Movie | null>(null);
   const [loading, setLoading] = useState(true);
   const [fav, setFav] = useState(false);
+  const viewed = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
-    api.movies
-      .get(id)
-      .then((r) => setMovie(r.movie as Movie))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    viewed.current = null;
   }, [id]);
 
   useEffect(() => {
-    if (!user || !token) return;
-    api.user
-      .favorites()
-      .then((r) => {
-        const ids = (r.items as { _id: string }[]).map((x) => String(x._id));
-        setFav(ids.includes(String(id)));
-      })
-      .catch(() => {});
-  }, [user, token, id]);
+    if (!id) return;
+    const unsub = subscribeMovie(
+      id,
+      (m) => {
+        setMovie(m);
+        setLoading(false);
+        if (m && viewed.current !== m._id) {
+          viewed.current = m._id;
+          incrementMovieViews(m._id).catch(() => {});
+        }
+      },
+      () => setLoading(false)
+    );
+    return () => unsub();
+  }, [id]);
+
+  useEffect(() => {
+    if (!user) {
+      setFav(false);
+      return;
+    }
+    const unsub = subscribeUserDoc(user.id, (doc) => {
+      if (!doc) return;
+      setFav(doc.favorites.map(String).includes(String(id)));
+    });
+    return () => unsub();
+  }, [user, id]);
 
   const toggleFav = async () => {
     if (!user) {
       window.location.href = "/login";
       return;
     }
-    await api.user.toggleFavorite(id);
-    setFav((f) => !f);
+    await toggleFavorite(user.id, id);
   };
 
   if (loading || !movie) {
@@ -57,9 +71,9 @@ export default function MovieDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
-      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div>
+    <div className="container mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
+      <div className="row g-5 g-lg-5">
+        <div className="col-lg">
           <div className="card-tile relative mb-8 aspect-video overflow-hidden shadow-2xl">
             <Image
               src={movie.thumbnailUrl || "/placeholder.svg"}
@@ -107,22 +121,24 @@ export default function MovieDetailPage() {
             </div>
           ) : null}
         </div>
-        <div className="flex flex-col gap-3 lg:sticky lg:top-24 lg:h-fit">
-          <Link
-            href={`/watch/${movie._id}`}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-netflix py-3.5 text-base font-bold text-white shadow-lg shadow-netflix/25 transition hover:scale-[1.02] hover:bg-netflix-dark active:scale-[0.98]"
-          >
-            <Play className="h-6 w-6 fill-white" />
-            Watch Now
-          </Link>
-          <button
-            type="button"
-            onClick={toggleFav}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] py-3.5 font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.08]"
-          >
-            <Heart className={`h-5 w-5 ${fav ? "fill-netflix text-netflix" : ""}`} />
-            {fav ? "Saved" : "Add to favorites"}
-          </button>
+        <div className="col-lg-auto" style={{ maxWidth: 360 }}>
+          <div className="d-flex flex-column gap-3 position-lg-sticky" style={{ top: "6rem" }}>
+            <Link
+              href={`/watch/${movie._id}`}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-netflix py-3.5 text-base font-bold text-white shadow-lg shadow-netflix/25 transition hover:scale-[1.02] hover:bg-netflix-dark active:scale-[0.98]"
+            >
+              <Play className="h-6 w-6 fill-white" />
+              Watch Now
+            </Link>
+            <button
+              type="button"
+              onClick={toggleFav}
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] py-3.5 font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.08]"
+            >
+              <Heart className={`h-5 w-5 ${fav ? "fill-netflix text-netflix" : ""}`} />
+              {fav ? "Saved" : "Add to favorites"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

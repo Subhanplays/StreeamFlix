@@ -8,11 +8,22 @@ import {
   useMemo,
   useState,
 } from "react";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import type { User } from "@/types";
-import { api, ApiError } from "@/lib/api";
+import { getFirebaseAuth } from "@/lib/firebase/client";
+import { createUserProfile, getUserDocOnce } from "@/lib/firebase/users";
+import { mapFirebaseAuthError } from "@/lib/firebase/authErrors";
+
+export { ApiError } from "@/lib/errors";
 
 type AuthState = {
   user: User | null;
+  /** Legacy field; Firebase uses session cookies in the client. Kept for compatibility. */
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -24,72 +35,66 @@ const Ctx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    setToken(t);
-    if (!t) {
+    const auth = getFirebaseAuth();
+    const unsub = onAuthStateChanged(auth, async (fu) => {
+      if (!fu) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      let profile = await getUserDocOnce(fu.uid);
+      if (!profile) {
+        const name = fu.displayName || (fu.email?.split("@")[0] ?? "User");
+        const email = fu.email ?? "";
+        await createUserProfile(fu.uid, name, email);
+        profile = await getUserDocOnce(fu.uid);
+      }
+      setUser({
+        id: fu.uid,
+        name: profile?.name ?? "",
+        email: profile?.email ?? fu.email ?? "",
+        role: (profile?.role === "admin" ? "admin" : "user") as User["role"],
+      });
       setLoading(false);
-      return;
-    }
-    api.auth
-      .me()
-      .then((res) => {
-        const u = res.user as {
-          _id: string;
-          name: string;
-          email: string;
-          role: "user" | "admin";
-        };
-        setUser({
-          id: u._id,
-          name: u.name,
-          email: u.email,
-          role: u.role,
-        });
-      })
-      .catch(() => {
-        localStorage.removeItem("token");
-        setToken(null);
-      })
-      .finally(() => setLoading(false));
+    });
+    return () => unsub();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await api.auth.login({ email, password });
-    localStorage.setItem("token", res.token);
-    setToken(res.token);
-    setUser({
-      id: res.user.id,
-      name: res.user.name,
-      email: res.user.email,
-      role: res.user.role as User["role"],
-    });
+    try {
+      await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
+    } catch (e) {
+      throw new Error(mapFirebaseAuthError(e));
+    }
   }, []);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    const res = await api.auth.register({ name, email, password });
-    localStorage.setItem("token", res.token);
-    setToken(res.token);
-    setUser({
-      id: res.user.id,
-      name: res.user.name,
-      email: res.user.email,
-      role: res.user.role as User["role"],
-    });
+    try {
+      const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
+      await createUserProfile(cred.user.uid, name, email);
+    } catch (e) {
+      throw new Error(mapFirebaseAuthError(e));
+    }
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    setToken(null);
+  const logout = useCallback(async () => {
+    await signOut(getFirebaseAuth());
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, loading, login, register, logout }),
-    [user, token, loading, login, register, logout]
+    () => ({
+      user,
+      token: user ? "firebase" : null,
+      loading,
+      login,
+      register,
+      logout,
+    }),
+    [user, loading, login, register, logout]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -104,5 +109,3 @@ export function useAuth() {
 export function useOptionalAuth() {
   return useContext(Ctx);
 }
-
-export { ApiError };

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
-import { api } from "@/lib/api";
+import { subscribeMovie } from "@/lib/firebase/movies";
+import { getWatchHistoryEntries, updateWatchProgress } from "@/lib/firebase/users";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Movie } from "@/types";
 
@@ -23,15 +24,13 @@ function WatchPageInner() {
 
   useEffect(() => {
     if (!id) return;
-    api.movies
-      .get(id)
-      .then((r) => {
-        const m = r.movie as Movie;
-        setMovie(m);
-        const idx = episodeQ != null ? Math.max(0, parseInt(episodeQ, 10) || 0) : 0;
-        setEpisodeIndex(idx);
-      })
-      .catch(console.error);
+    const unsub = subscribeMovie(id, (m) => {
+      if (!m) return;
+      setMovie(m);
+      const idx = episodeQ != null ? Math.max(0, parseInt(episodeQ, 10) || 0) : 0;
+      setEpisodeIndex(idx);
+    });
+    return () => unsub();
   }, [id, episodeQ]);
 
   const currentUrl = useMemo(() => {
@@ -45,14 +44,9 @@ function WatchPageInner() {
 
   useEffect(() => {
     if (!movie || !user) return;
-    api.user
-      .watchHistory()
-      .then((res) => {
-        const entry = res.entries.find(
-          (e) =>
-            (typeof e.movie === "object" && e.movie && (e.movie as Movie)._id === movie._id) ||
-            e.movie === movie._id
-        );
+    getWatchHistoryEntries(user.id)
+      .then((entries) => {
+        const entry = entries.find((e) => e.movie._id === movie._id);
         if (entry && entry.progress > 5) {
           const ei = entry.episodeIndex;
           if (typeof ei === "number" && movie.isSeries && movie.episodes?.length) {
@@ -68,14 +62,12 @@ function WatchPageInner() {
     (current: number, duration: number) => {
       if (!movie || !user || !duration) return;
       lastReport.current = { t: Date.now(), c: current, d: duration };
-      api.user
-        .progress({
-          movieId: movie._id,
-          progress: current,
-          duration,
-          episodeIndex: movie.isSeries ? episodeIndex : undefined,
-        })
-        .catch(() => {});
+      updateWatchProgress(user.id, {
+        movieId: movie._id,
+        progress: current,
+        duration,
+        episodeIndex: movie.isSeries ? episodeIndex : undefined,
+      }).catch(() => {});
     },
     [movie, user, episodeIndex]
   );

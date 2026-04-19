@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { MovieForm, toPayload, type MovieFormValues } from "@/components/admin/MovieForm";
-import { api } from "@/lib/api";
-import type { Movie } from "@/types";
+import { subscribeMovie, updateMovie } from "@/lib/firebase/movies";
 
 export default function EditMoviePage() {
   const params = useParams();
@@ -13,10 +12,13 @@ export default function EditMoviePage() {
   const [initial, setInitial] = useState<Partial<MovieFormValues> | null>(null);
 
   useEffect(() => {
-    api.movies
-      .get(id)
-      .then((r) => {
-        const m = r.movie as Movie;
+    const unsub = subscribeMovie(
+      id,
+      (m) => {
+        if (!m) {
+          router.replace("/admin/movies");
+          return;
+        }
         setInitial({
           title: m.title,
           description: m.description || "",
@@ -29,8 +31,10 @@ export default function EditMoviePage() {
           isSeries: !!m.isSeries,
           episodes: m.episodes || [],
         });
-      })
-      .catch(() => router.replace("/admin/movies"));
+      },
+      () => router.replace("/admin/movies")
+    );
+    return () => unsub();
   }, [id, router]);
 
   if (!initial) {
@@ -45,7 +49,7 @@ export default function EditMoviePage() {
         initial={initial}
         submitLabel="Save changes"
         onSubmit={async (values) => {
-          await api.movies.update(id, toPayload(values));
+          await updateMovie(id, toPayload(values) as Record<string, unknown>);
           router.refresh();
         }}
       />

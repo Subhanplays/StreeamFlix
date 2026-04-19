@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useAuth, ApiError } from "@/components/providers/AuthProvider";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { ApiError } from "@/lib/errors";
 
 export default function RegisterPage() {
   const { register } = useAuth();

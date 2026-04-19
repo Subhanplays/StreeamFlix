@@ -1,46 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import { MovieRow } from "@/components/home/MovieRow";
-import { api } from "@/lib/api";
+import { buildHomeFeed } from "@/lib/firebase/homeFeed";
+import { subscribeMovies } from "@/lib/firebase/movies";
+import { subscribeAppSettings, type AppSettings } from "@/lib/firebase/settings";
 import type { Movie } from "@/types";
 
 export default function HomePage() {
-  const [featured, setFeatured] = useState<Movie[]>([]);
-  const [rows, setRows] = useState<{ title: string; items: Movie[] }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [settings, setSettings] = useState<AppSettings>({ homeBannerMovieId: null });
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const home = await api.movies.home();
-        if (cancelled) return;
-        const feat = (home.featured as Movie[]) || [];
-        const trending = (home.trending as Movie[]) || [];
-        const byGenre = (home.rows || []) as { title: string; items: Movie[] }[];
-        setFeatured(feat.length ? feat : trending.slice(0, 6));
-        setRows([
-          { title: "Trending now", items: trending.slice(0, 12) },
-          ...byGenre.filter((x) => x.items.length),
-        ]);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    const u1 = subscribeMovies(
+      (list) => {
+        setMovies(list);
+        setReady(true);
+      },
+      () => setReady(true)
+    );
+    const u2 = subscribeAppSettings((s) => setSettings(s), () => {});
     return () => {
-      cancelled = true;
+      u1();
+      u2();
     };
   }, []);
 
-  const heroMovie = featured[0] ?? null;
+  const { hero, featured, rows } = useMemo(
+    () => buildHomeFeed(movies, settings),
+    [movies, settings]
+  );
+
+  const loading = !ready;
 
   return (
-    <div>
-      <HeroBanner movie={heroMovie} loading={loading} />
+    <div className="container-fluid px-0">
+      <HeroBanner movie={hero} loading={loading} />
       <div className="-mt-20 relative z-20 space-y-1 pb-20">
         <MovieRow title="Featured" movies={featured} loading={loading} />
         {rows.map((row) => (
