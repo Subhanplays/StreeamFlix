@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd client && npm ci && npm run build",
+  "outputDirectory": "client/.next",
+  "root": "client"
+}
