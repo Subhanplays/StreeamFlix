@@ -1,5 +1,4 @@
 {
-  "buildCommand": "npm ci && npm run build",
-  "outputDirectory": ".next",
-  "monorepoRoot": "client"
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next"
 }
