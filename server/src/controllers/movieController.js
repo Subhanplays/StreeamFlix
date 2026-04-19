@@ -4,9 +4,11 @@ import {
   distinctGenres,
   filterMovies,
   findMovieById,
+  getSettings,
   incrementMovieViews,
   listMoviesSorted,
   updateMovieById,
+  updateSettings,
 } from '../db/store.js';
 
 export async function listMovies(req, res) {
@@ -40,7 +42,11 @@ export async function homeFeed(req, res) {
     items: filterMovies({ genre: g }).slice(0, 12),
   }));
   const feat = featured.length ? featured : trending.slice(0, 6);
+  const bannerId = getSettings().homeBannerMovieId;
+  const bannerPick = bannerId ? findMovieById(bannerId) : null;
+  const hero = bannerPick || feat[0] || trending[0] || null;
   res.json({
+    hero,
     featured: feat,
     trending: trending.slice(0, 12),
     rows: rows.filter((r) => r.items.length),
@@ -71,9 +77,13 @@ export async function updateMovie(req, res) {
 }
 
 export async function deleteMovie(req, res) {
-  const ok = deleteMovieById(req.params.id);
+  const id = req.params.id;
+  const ok = deleteMovieById(id);
   if (!ok) {
     return res.status(404).json({ message: 'Movie not found' });
+  }
+  if (getSettings().homeBannerMovieId === id) {
+    updateSettings({ homeBannerMovieId: null });
   }
   res.json({ message: 'Deleted' });
 }

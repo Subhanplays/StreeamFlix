@@ -7,21 +7,43 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', '..', 'data');
 const DB_PATH = join(DATA_DIR, 'db.json');
 
-/** @type {{ users: object[], movies: object[] }} */
-let cache = { users: [], movies: [] };
+/** @type {{ users: object[], movies: object[], settings: { homeBannerMovieId: string | null } }} */
+let cache = { users: [], movies: [], settings: { homeBannerMovieId: null } };
+
+function normalizeDb(raw) {
+  const users = Array.isArray(raw.users) ? raw.users : [];
+  const movies = Array.isArray(raw.movies) ? raw.movies : [];
+  const sid = raw.settings?.homeBannerMovieId;
+  const settings = {
+    homeBannerMovieId: typeof sid === 'string' && sid ? sid : null,
+  };
+  return { users, movies, settings };
+}
 
 function ensureFile() {
   mkdirSync(DATA_DIR, { recursive: true });
   if (!existsSync(DB_PATH)) {
-    writeFileSync(DB_PATH, JSON.stringify({ users: [], movies: [] }, null, 2), 'utf8');
+    writeFileSync(
+      DB_PATH,
+      JSON.stringify({ users: [], movies: [], settings: { homeBannerMovieId: null } }, null, 2),
+      'utf8'
+    );
   }
 }
 
 export function initDb() {
   ensureFile();
-  cache = JSON.parse(readFileSync(DB_PATH, 'utf8'));
-  if (!Array.isArray(cache.users)) cache.users = [];
-  if (!Array.isArray(cache.movies)) cache.movies = [];
+  cache = normalizeDb(JSON.parse(readFileSync(DB_PATH, 'utf8')));
+}
+
+export function getSettings() {
+  return { ...cache.settings };
+}
+
+export function updateSettings(patch) {
+  Object.assign(cache.settings, patch);
+  persist();
+  return getSettings();
 }
 
 function persist() {
